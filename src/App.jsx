@@ -62,13 +62,14 @@ import {
 
 // --- FIREBASE CONFIG ---
 const firebaseConfig = {
-  apiKey: "AIzaSyB2XlTLG97XtqTA4lWd5mdJxj9cYxQBldU",
+  apiKey: "AIzaSyB2XlTLG97XtqTA4lWd5mdJxj9cYxQBldU",
   authDomain: "printcontrol-app.firebaseapp.com",
   projectId: "printcontrol-app",
   storageBucket: "printcontrol-app.firebasestorage.app",
   messagingSenderId: "327550053348",
   appId: "1:327550053348:web:24bc38ed5cd6c79b54b5f1"
 };
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
