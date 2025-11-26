@@ -61,21 +61,23 @@ import {
 } from 'firebase/firestore';
 
 // --- FIREBASE CONFIG ---
-const firebaseConfig = {
-  apiKey: "AIzaSyB2XlTLG97XtqTA4lWd5mdJxj9cYxQBldU",
-  authDomain: "printcontrol-app.firebaseapp.com",
-  projectId: "printcontrol-app",
-  storageBucket: "printcontrol-app.firebasestorage.app",
-  messagingSenderId: "327550053348",
-  appId: "1:327550053348:web:24bc38ed5cd6c79b54b5f1"
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+  apiKey: "AIzaSyB2XlTLG97XtqTA4lWd5mdJxj9cYxQBldU",
+  authDomain: "printcontrol-app.firebaseapp.com",
+  projectId: "printcontrol-app",
+  storageBucket: "printcontrol-app.firebasestorage.app",
+  messagingSenderId: "327550053348",
+  appId: "1:327550053348:web:24bc38ed5cd6c79b54b5f1"
 };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// FIX: Use a static, clean App ID to prevent path errors from system environment variables
-const appId = 'print-master-control-app';
+// FIX: Sanitize appId aggressively to prevent Firestore path errors (remove slashes)
+// This ensures the path 'artifacts/{appId}/...' is always valid
+const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_'); 
 
 // --- LOGO COMPONENT ---
 const MagenLogo = ({ size = 'normal', className = '' }) => {
@@ -271,7 +273,7 @@ export default function App() {
           qualities: ['Estándar', 'Alta'], 
           products: ['Pendón', 'Lienzo'], 
           users: [{name: 'Admin', pass: '1234'}] 
-        });
+        }).catch(err => console.error("Error creating config:", err));
       }
     }, (error) => {
         console.error("Error fetching config:", error);
