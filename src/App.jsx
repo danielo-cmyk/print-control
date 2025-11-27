@@ -1,63 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Plus, 
-  Printer, 
-  User, 
-  Clock, 
-  Trash2, 
-  Flame,
-  ExternalLink,
-  StickyNote,
-  Hash,
-  History,
-  X,
-  Edit3,
-  CheckCircle2,
-  AlertCircle,
-  FileCheck,
-  FileX,
-  Archive,
-  ArrowLeft,
-  Settings,
-  Monitor,
-  LogOut,
-  PauseCircle,
-  Ticket,
-  Save,
-  Lock,
-  UserPlus,
-  ChevronDown,
-  CloudDownload,
-  Link,
-  Ruler,
-  Box,
-  RefreshCcw,
-  List,
-  Users,
-  Package,
-  Calendar as CalendarIcon
+  Plus, Printer, User, Clock, Trash2, Flame, ExternalLink, StickyNote, Hash, 
+  History, X, Edit3, CheckCircle2, AlertCircle, FileCheck, FileX, Archive, 
+  ArrowLeft, Settings, Monitor, LogOut, PauseCircle, Ticket, Save, Lock, 
+  UserPlus, ChevronDown, CloudDownload, Link, Ruler, Box, RefreshCcw, List, Users, Package, Calendar as CalendarIcon, ShieldAlert
 } from 'lucide-react';
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
 import { 
-  getAuth, 
-  signInAnonymously, 
-  onAuthStateChanged,
-  signInWithCustomToken
+  getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken 
 } from 'firebase/auth';
 import { 
-  getFirestore, 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  onSnapshot, 
-  query, 
-  serverTimestamp,
-  setDoc,
-  getDoc
+  getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, 
+  query, serverTimestamp, setDoc, getDoc
 } from 'firebase/firestore';
 
 // --- FIREBASE CONFIG ---
@@ -74,10 +30,8 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// FIX: Sanitize appId aggressively to prevent Firestore path errors (remove slashes)
-// This ensures the path 'artifacts/{appId}/...' is always valid
-const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_'); 
+// ID de App seguro para evitar errores de ruta
+const appId = 'print-master-control-app';
 
 // --- LOGO COMPONENT ---
 const MagenLogo = ({ size = 'normal', className = '' }) => {
@@ -187,7 +141,7 @@ const getDateHeaderStyle = (dateString, isUrgent, status) => {
 };
 
 const getQualityAbbr = (quality) => {
-  if (!quality || typeof quality !== 'string') return '';
+  if (!quality) return '';
   if (quality === 'Estándar') return 'STA';
   if (quality === 'Alta') return 'ALT';
   return quality.substring(0, 3).toUpperCase();
@@ -206,6 +160,7 @@ export default function App() {
   });
 
   const [loading, setLoading] = useState(true);
+  const [permissionError, setPermissionError] = useState(false); // Nuevo estado para errores de permisos
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isTvMode, setIsTvMode] = useState(false);
@@ -237,9 +192,9 @@ export default function App() {
     const initAuth = async () => {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
+            await signInWithCustomToken(auth, __initial_auth_token);
         } else {
-          await signInAnonymously(auth);
+            await signInAnonymously(auth);
         }
       } catch (error) { console.error("Auth error", error); }
     };
@@ -251,29 +206,36 @@ export default function App() {
   useEffect(() => {
     if (!firebaseUser) return;
     
-    // Subscribe to Jobs
+    // Cargar trabajos
     const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'print_orders'));
     const unsubJobs = onSnapshot(q, (snapshot) => {
       const jobsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setJobs(jobsData);
       setLoading(false);
+      setPermissionError(false); // Si carga, quitamos error
     }, (error) => {
-      console.error("Error fetching jobs:", error);
-      setLoading(false);
+        console.error("Error fetching jobs:", error);
+        if (error.code === 'permission-denied') {
+            setPermissionError(true);
+        }
+        setLoading(false);
     });
 
-    // Subscribe to Config
+    // Cargar configuración
     const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'app_config', 'general_settings');
     const unsubConfig = onSnapshot(configRef, (docSnap) => {
       if (docSnap.exists()) setConfig(prev => ({ ...prev, ...docSnap.data() }));
       else {
-        // Initialize defaults if not exists
+        // Intentar crear config inicial
         setDoc(configRef, { 
           designers: ['Victor', 'Mayk', 'Directo Cliente'], 
           qualities: ['Estándar', 'Alta'], 
-          products: ['Pendón', 'Lienzo'], 
+          products: ['Pendón', 'Lienzo', 'Adhesivo', 'Papel'], 
           users: [{name: 'Admin', pass: '1234'}] 
-        }).catch(err => console.error("Error creating config:", err));
+        }).catch(err => {
+            console.error("Config init error:", err);
+            if (err.code === 'permission-denied') setPermissionError(true);
+        });
       }
     }, (error) => {
         console.error("Error fetching config:", error);
@@ -347,7 +309,12 @@ export default function App() {
         if (changes.length === 0) changes.push("Edición de detalles");
         if (jobData.status === 'Impreso' && oldJob.status !== 'Impreso') jobData.finishedAt = new Date().toISOString();
         
-        await updateDoc(jobRef, { ...jobData, history: [{ date: new Date().toISOString(), action: changes.join(', '), user: appUser.name }, ...(oldJob.history || [])] });
+        const newHistory = [
+            { date: new Date().toISOString(), action: changes.join(', ') || "Actualización", user: appUser.name },
+            ...(oldJob.history || [])
+        ];
+
+        await updateDoc(jobRef, { ...jobData, history: newHistory });
       } else {
         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'print_orders'), {
           ...jobData, createdBy: appUser.name, entryDate: new Date().toISOString(), createdAt: serverTimestamp(),
@@ -355,7 +322,10 @@ export default function App() {
         });
       }
       closeModal();
-    } catch (error) { console.error(error); }
+    } catch (error) { 
+        console.error("Error saving job:", error); 
+        if (error.code === 'permission-denied') alert("Error: No tienes permiso para escribir en la base de datos. Revisa las reglas en Firebase Console.");
+    }
   };
 
   const handleUpdateStatus = async (job, newStatus) => {
@@ -575,6 +545,34 @@ export default function App() {
 
   // --- RENDERING ---
   if (loading) return <div className="flex h-screen items-center justify-center text-slate-500">Cargando...</div>;
+  
+  // Mostrar pantalla de ayuda si hay error de permisos
+  if (permissionError) {
+     return (
+        <div className="flex h-screen items-center justify-center bg-red-50 p-6 font-sans">
+           <div className="bg-white p-8 rounded-2xl shadow-2xl max-w-lg text-center border border-red-100 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-2 bg-red-600"></div>
+              <div className="mb-4 inline-flex p-4 bg-red-100 text-red-600 rounded-full">
+                 <ShieldAlert size={48}/>
+              </div>
+              <h2 className="text-2xl font-black text-slate-800 mb-2">Base de Datos Bloqueada</h2>
+              <p className="text-slate-600 mb-6">La aplicación no tiene permiso para guardar o leer datos. Esto es normal la primera vez.</p>
+              
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-left text-sm text-slate-700 space-y-3 mb-6">
+                 <p className="font-bold text-slate-900">Cómo solucionarlo (30 segundos):</p>
+                 <ol className="list-decimal list-inside space-y-2 ml-1">
+                    <li>Ve a la <a href="https://console.firebase.google.com/" target="_blank" className="text-blue-600 hover:underline font-bold">Consola de Firebase</a>.</li>
+                    <li>Entra en <strong>Firestore Database</strong> {'>'} <strong>Reglas</strong>.</li>
+                    <li>Cambia <code>allow read, write: if false;</code> por <code>if true;</code>.</li>
+                    <li>Dale al botón <strong>Publicar</strong>.</li>
+                 </ol>
+              </div>
+              <button onClick={()=>window.location.reload()} className="w-full bg-red-600 text-white px-4 py-3 rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200">Ya lo hice, Recargar</button>
+           </div>
+        </div>
+     );
+  }
+
   if (!appUser) return (
     <div className="flex h-screen items-center justify-center bg-slate-100 p-4">
       <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm flex flex-col items-center">
